@@ -21,7 +21,7 @@ import os from "os";
 function convertPathForCurrentPlatform(inputPath: string): string {
   const platform = os.platform();
   
-  // If no path provided or already in correct format for platform, return as is
+  // If no path provided, return as is
   if (!inputPath) return inputPath;
   
   console.log(`Converting path "${inputPath}" for platform: ${platform}`);
@@ -36,8 +36,8 @@ function convertPathForCurrentPlatform(inputPath: string): string {
   if (platform === 'linux' || platform === 'darwin') {
     // Check if this is a Windows UNC path (starts with \\)
     if (inputPath.startsWith('\\\\') || inputPath.includes('\\')) {
-      // Check if this is a WSL path (contains wsl.localhost)
-      if (platform === 'linux' && (inputPath.includes('wsl.localhost') || inputPath.includes('wsl$'))) {
+      // Check if this is a WSL path (contains wsl.localhost or wsl$)
+      if (inputPath.includes('wsl.localhost') || inputPath.includes('wsl$')) {
         // Extract the path after the distribution name
         // Handle both \\wsl.localhost\Ubuntu\path and \\wsl$\Ubuntu\path formats
         const parts = inputPath.split('\\').filter(part => part.length > 0);
@@ -49,7 +49,7 @@ function convertPathForCurrentPlatform(inputPath: string): string {
         // Find the distribution name in the path
         let distIndex = -1;
         for (const dist of distNames) {
-          const index = parts.findIndex(part => part === dist);
+          const index = parts.findIndex(part => part === dist || part.toLowerCase() === dist.toLowerCase());
           if (index !== -1) {
             distIndex = index;
             break;
@@ -59,6 +59,20 @@ function convertPathForCurrentPlatform(inputPath: string): string {
         if (distIndex !== -1 && distIndex + 1 < parts.length) {
           // Reconstruct the path as a native Linux path
           const linuxPath = '/' + parts.slice(distIndex + 1).join('/');
+          console.log(`Converted Windows WSL path "${inputPath}" to Linux path "${linuxPath}"`);
+          return linuxPath;
+        }
+        
+        // If we couldn't find a distribution name but it's clearly a WSL path,
+        // try to extract everything after wsl.localhost or wsl$
+        const wslIndex = parts.findIndex(part => 
+          part === 'wsl.localhost' || part === 'wsl$' || 
+          part.toLowerCase() === 'wsl.localhost' || part.toLowerCase() === 'wsl$'
+        );
+        
+        if (wslIndex !== -1 && wslIndex + 2 < parts.length) {
+          // Skip the WSL prefix and distribution name
+          const linuxPath = '/' + parts.slice(wslIndex + 2).join('/');
           console.log(`Converted Windows WSL path "${inputPath}" to Linux path "${linuxPath}"`);
           return linuxPath;
         }
@@ -931,19 +945,16 @@ export class BrowserConnector {
       console.log("Browser Connector: Received screenshot data, saving...");
       console.log("Browser Connector: Custom path from extension:", customPath);
 
-      // Determine target path - prioritize relative path for WSL environments
+      // Determine target path - prioritize custom path but ensure it's properly converted
       let targetPath;
-      if (os.platform() === 'linux' && process.env.WSL_DISTRO_NAME) {
-        // We're in WSL, use a relative path
-        targetPath = getRelativeScreenshotPath();
-        console.log(`Browser Connector: Using relative path for WSL: ${targetPath}`);
-      } else {
-        // Use the provided path or default
-        targetPath = customPath || currentSettings.screenshotPath || getDefaultDownloadsFolder();
-        targetPath = convertPathForCurrentPlatform(targetPath);
-      }
       
-      console.log(`Browser Connector: Final target path: ${targetPath}`);
+      // Use the provided path or default
+      targetPath = customPath || currentSettings.screenshotPath || getDefaultDownloadsFolder();
+      
+      // Convert the path for the current platform
+      targetPath = convertPathForCurrentPlatform(targetPath);
+      
+      console.log(`Browser Connector: Using path: ${targetPath}`);
 
       if (!base64Data) {
         throw new Error("No screenshot data received from Chrome extension");
@@ -964,6 +975,15 @@ export class BrowserConnector {
 
       // Remove the data:image/png;base64, prefix if present
       const cleanBase64 = base64Data.replace(/^data:image\/png;base64,/, "");
+
+      // Ensure the directory exists
+      try {
+        fs.mkdirSync(targetPath, { recursive: true });
+        console.log(`Browser Connector: Ensured directory exists: ${targetPath}`);
+      } catch (err) {
+        console.error(`Browser Connector: Error creating directory: ${targetPath}`, err);
+        throw new Error(`Failed to create screenshot directory: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
       // Save the file
       try {
