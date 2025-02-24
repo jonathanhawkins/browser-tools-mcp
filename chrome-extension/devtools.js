@@ -9,7 +9,13 @@ let settings = {
   showRequestHeaders: false,
   showResponseHeaders: false,
   screenshotPath: "", // Add new setting for screenshot path
+  serverUrl: "http://localhost:3025", // Default to localhost
 };
+
+// Helper function to get server URL with fallback
+function getServerUrl() {
+  return settings.serverUrl || "http://localhost:3025";
+}
 
 // Keep track of debugger state
 let isDebuggerAttached = false;
@@ -42,7 +48,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       // Send screenshot data to browser connector via HTTP POST
-      fetch("http://127.0.0.1:3025/screenshot", {
+      fetch(`${getServerUrl()}/screenshot`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -282,7 +288,7 @@ function sendToBrowserConnector(logData) {
     );
   }
 
-  fetch("http://127.0.0.1:3025/extension-log", {
+  fetch(`${getServerUrl()}/extension-log`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -304,7 +310,7 @@ function sendToBrowserConnector(logData) {
 
 // Add function to wipe logs
 function wipeLogs() {
-  fetch("http://127.0.0.1:3025/wipelogs", {
+  fetch(`${getServerUrl()}/wipelogs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
   }).catch((error) => {
@@ -524,7 +530,10 @@ function setupWebSocket() {
     ws.close();
   }
 
-  ws = new WebSocket("ws://localhost:3025/extension-ws");
+  const wsUrl = getServerUrl().replace('http://', 'ws://') + '/extension-ws';
+  console.log(`Connecting to WebSocket at ${wsUrl}`);
+  
+  ws = new WebSocket(wsUrl);
 
   ws.onmessage = async (event) => {
     try {
