@@ -110,6 +110,22 @@
         .action-button.danger:hover {
             background-color: #d32f2f;
         }
+        .action-button.success {
+            background-color: #4caf50;
+        }
+        .action-button.success:hover {
+            background-color: #388e3c;
+        }
+        .action-button.error {
+            background-color: #f44336;
+        }
+        .action-button.error:hover {
+            background-color: #d32f2f;
+        }
+        .help-text {
+            font-size: 0.8em;
+            color: #ccc;
+        }
     </style>
 </head>
 <body>
@@ -122,6 +138,27 @@
             <button id="wipe-logs" class="action-button danger">
                 Wipe All Logs
             </button>
+        </div>
+    </div>
+
+    <div class="settings-section">
+        <h3>Server Configuration</h3>
+        <div class="form-group">
+            <label for="server-url">Server URL</label>
+            <input type="text" id="server-url" placeholder="http://localhost:3025">
+            <p class="help-text">Enter the URL where your browser tools server is running, or use auto-discovery below.</p>
+        </div>
+        <div class="quick-actions">
+            <button id="discover-server" class="action-button">
+                Auto-Discover Server
+            </button>
+            <button id="server-test-connection" class="action-button">
+                Test Connection
+            </button>
+        </div>
+        <div id="discovered-servers-container" style="display: none;">
+            <p>Discovered servers:</p>
+            <ul id="discovered-servers-list"></ul>
         </div>
     </div>
 

@@ -11,12 +11,90 @@ import { IncomingMessage } from "http";
 import { Socket } from "net";
 import os from "os";
 
+/**
+ * Converts a file path to the appropriate format for the current platform
+ * Handles Windows, WSL, macOS and Linux path formats
+ * 
+ * @param inputPath - The path to convert
+ * @returns The converted path appropriate for the current platform
+ */
+function convertPathForCurrentPlatform(inputPath: string): string {
+  const platform = os.platform();
+  
+  // If no path provided or already in correct format for platform, return as is
+  if (!inputPath) return inputPath;
+  
+  console.log(`Converting path "${inputPath}" for platform: ${platform}`);
+  
+  // Windows-specific conversion
+  if (platform === 'win32') {
+    // Convert forward slashes to backslashes
+    return inputPath.replace(/\//g, '\\');
+  }
+  
+  // Linux/Mac-specific conversion
+  if (platform === 'linux' || platform === 'darwin') {
+    // Check if this is a Windows UNC path (starts with \\)
+    if (inputPath.startsWith('\\\\') || inputPath.includes('\\')) {
+      // Check if this is a WSL path (contains wsl.localhost)
+      if (platform === 'linux' && (inputPath.includes('wsl.localhost') || inputPath.includes('wsl$'))) {
+        // Extract the path after the distribution name
+        // Handle both \\wsl.localhost\Ubuntu\path and \\wsl$\Ubuntu\path formats
+        const parts = inputPath.split('\\').filter(part => part.length > 0);
+        console.log("Path parts:", parts);
+        
+        // Find the index after the distribution name
+        const distNames = ['Ubuntu', 'Debian', 'kali', 'openSUSE', 'SLES', 'Fedora'];
+        
+        // Find the distribution name in the path
+        let distIndex = -1;
+        for (const dist of distNames) {
+          const index = parts.findIndex(part => part === dist);
+          if (index !== -1) {
+            distIndex = index;
+            break;
+          }
+        }
+        
+        if (distIndex !== -1 && distIndex + 1 < parts.length) {
+          // Reconstruct the path as a native Linux path
+          const linuxPath = '/' + parts.slice(distIndex + 1).join('/');
+          console.log(`Converted Windows WSL path "${inputPath}" to Linux path "${linuxPath}"`);
+          return linuxPath;
+        }
+      }
+      
+      // For non-WSL Windows paths, just normalize the slashes
+      const normalizedPath = inputPath.replace(/\\\\/g, '/').replace(/\\/g, '/');
+      console.log(`Converted Windows UNC path "${inputPath}" to "${normalizedPath}"`);
+      return normalizedPath;
+    }
+    
+    // Handle Windows drive letters (e.g., C:\path\to\file)
+    if (/^[A-Z]:\\/i.test(inputPath)) {
+      // Convert Windows drive path to Linux/Mac compatible path
+      const normalizedPath = inputPath.replace(/^[A-Z]:\\/i, '/').replace(/\\/g, '/');
+      console.log(`Converted Windows drive path "${inputPath}" to "${normalizedPath}"`);
+      return normalizedPath;
+    }
+  }
+  
+  // Return the original path if no conversion was needed or possible
+  return inputPath;
+}
+
 // Function to get default downloads folder
 function getDefaultDownloadsFolder(): string {
   const homeDir = os.homedir();
   // Downloads folder is typically the same path on Windows, macOS, and Linux
   const downloadsPath = path.join(homeDir, "Downloads", "mcp-screenshots");
   return downloadsPath;
+}
+
+// Function to create a relative path for screenshots
+function getRelativeScreenshotPath(): string {
+  // Create a screenshots directory in the project root
+  return path.join(process.cwd(), "..", "screenshots");
 }
 
 // We store logs in memory
@@ -36,6 +114,8 @@ let currentSettings = {
   stringSizeLimit: 500,
   maxLogSize: 20000,
   screenshotPath: getDefaultDownloadsFolder(),
+  // Add server host configuration
+  serverHost: process.env.SERVER_HOST || '0.0.0.0', // Default to all interfaces
 };
 
 // Add new storage for selected element
@@ -56,6 +136,137 @@ app.use(cors());
 // Increase JSON body parser limit to 50MB to handle large screenshots
 app.use(bodyParser.json({ limit: "50mb" }));
 app.use(bodyParser.urlencoded({ limit: "50mb", extended: true }));
+
+// Add root endpoint with HTML page
+app.get("/", (req, res) => {
+  const isWsl = !!process.env.WSL_DISTRO_NAME;
+  const platform = os.platform();
+  
+  // Create a simple HTML page with information and links
+  const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browser Tools Server</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #3498db;
+      margin-top: 30px;
+    }
+    .card {
+      background: #f9f9f9;
+      border-radius: 5px;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-left: 4px solid #3498db;
+    }
+    .info {
+      background: #e8f4f8;
+      padding: 10px;
+      border-radius: 5px;
+      margin: 15px 0;
+    }
+    code {
+      background: #f1f1f1;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    a {
+      color: #3498db;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .endpoint {
+      margin-bottom: 10px;
+    }
+    .endpoint a {
+      font-weight: bold;
+    }
+    .endpoint-desc {
+      margin-left: 20px;
+      font-size: 0.9em;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <h1>Browser Tools Server</h1>
+  <div class="card">
+    <p>Server is running on port <strong>${PORT}</strong></p>
+    <p>Platform: <strong>${platform}${isWsl ? ' (WSL)' : ''}</strong></p>
+    <p>Hostname: <strong>${os.hostname()}</strong></p>
+  </div>
+
+  <h2>Chrome Extension Configuration</h2>
+  <div class="info">
+    <p>To configure your Chrome extension, use one of these URLs:</p>
+    <ul>
+      ${isWsl ? '<li><strong>For Windows host:</strong> <code>http://wsl.localhost:' + PORT + '</code></li>' : ''}
+      <li><strong>For ${isWsl ? 'WSL' : platform}:</strong> <code>http://localhost:${PORT}</code></li>
+    </ul>
+    <p>Test your connection with: <code>curl http://localhost:${PORT}/ping</code></p>
+  </div>
+
+  <h2>Available Endpoints</h2>
+  <div class="endpoint">
+    <a href="/debug">/debug</a>
+    <div class="endpoint-desc">Get detailed server configuration and network information</div>
+  </div>
+  <div class="endpoint">
+    <a href="/ping">/ping</a>
+    <div class="endpoint-desc">Test server connectivity</div>
+  </div>
+  <div class="endpoint">
+    <a href="/server-info">/server-info</a>
+    <div class="endpoint-desc">Get server address information</div>
+  </div>
+  <div class="endpoint">
+    <a href="/console-logs">/console-logs</a>
+    <div class="endpoint-desc">Get browser console logs</div>
+  </div>
+  <div class="endpoint">
+    <a href="/console-errors">/console-errors</a>
+    <div class="endpoint-desc">Get browser console errors</div>
+  </div>
+  <div class="endpoint">
+    <a href="/network-errors">/network-errors</a>
+    <div class="endpoint-desc">Get browser network errors</div>
+  </div>
+  <div class="endpoint">
+    <a href="/all-xhr">/all-xhr</a>
+    <div class="endpoint-desc">Get all browser XHR requests</div>
+  </div>
+
+  <h2>Server Status</h2>
+  <p>Server started at: <code>${new Date().toISOString()}</code></p>
+  <p><a href="/debug">View detailed server information</a></p>
+</body>
+</html>
+  `;
+  
+  res.send(html);
+});
 
 // Helper to recursively truncate strings in any data structure
 function truncateStringsInData(data: any, maxLength: number): any {
@@ -324,6 +535,78 @@ app.post("/wipelogs", (req, res) => {
   res.json({ status: "ok", message: "All logs cleared successfully" });
 });
 
+// Add global ping endpoint for connection testing
+app.get("/ping", (req, res) => {
+  console.log("Received ping request");
+  res.status(200).json({
+    status: "success",
+    message: "Browser connector server is running",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Add debug endpoint for configuration information
+app.get("/debug", (req, res) => {
+  console.log("Received debug request");
+  
+  // Get all network interfaces for discovery
+  const networkInterfaces = os.networkInterfaces();
+  const addresses: string[] = [];
+  
+  // Collect all non-internal IPv4 addresses
+  Object.keys(networkInterfaces).forEach((interfaceName) => {
+    const interfaces = networkInterfaces[interfaceName];
+    if (interfaces) {
+      interfaces.forEach((iface) => {
+        if (!iface.internal && iface.family === 'IPv4') {
+          addresses.push(iface.address);
+        }
+      });
+    }
+  });
+  
+  // Determine recommended URLs based on platform
+  const recommendedUrls: string[] = [];
+  
+  // For Windows host accessing WSL
+  if (os.platform() === 'linux' && process.env.WSL_DISTRO_NAME) {
+    recommendedUrls.push(`http://wsl.localhost:${PORT}`);
+    recommendedUrls.push(`http://localhost:${PORT}`);
+  } else {
+    recommendedUrls.push(`http://localhost:${PORT}`);
+  }
+  
+  // Add all IP addresses
+  addresses.forEach(addr => {
+    recommendedUrls.push(`http://${addr}:${PORT}`);
+  });
+  
+  res.json({
+    status: "success",
+    serverInfo: {
+      version: "1.0.0",
+      platform: os.platform(),
+      hostname: os.hostname(),
+      isWsl: !!process.env.WSL_DISTRO_NAME,
+      port: PORT,
+      host: currentSettings.serverHost,
+    },
+    networkInfo: {
+      addresses: addresses,
+      recommendedUrls: recommendedUrls,
+    },
+    endpoints: {
+      ping: "/ping",
+      screenshot: "/capture-screenshot",
+      consoleLogs: "/console-logs",
+      consoleErrors: "/console-errors",
+      networkErrors: "/network-errors",
+      allXhr: "/all-xhr",
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
+
 interface ScreenshotMessage {
   type: "screenshot-data" | "screenshot-error";
   data?: string;
@@ -336,6 +619,7 @@ export class BrowserConnector {
   private activeConnection: WebSocket | null = null;
   private app: express.Application;
   private server: any;
+  public lastScreenshotPath: string | null = null; // Make lastScreenshotPath public
 
   constructor(app: express.Application, server: any) {
     this.app = app;
@@ -449,26 +733,46 @@ export class BrowserConnector {
             return;
           }
 
-          // Use provided path or default to downloads folder
-          const targetPath = outputPath || getDefaultDownloadsFolder();
-          console.log(`Using screenshot path: ${targetPath}`);
+          // Determine target path - prioritize relative path for WSL environments
+          let targetPath;
+          if (os.platform() === 'linux' && process.env.WSL_DISTRO_NAME) {
+            // We're in WSL, use a relative path
+            targetPath = getRelativeScreenshotPath();
+            console.log(`Browser Connector: Using relative path for WSL: ${targetPath}`);
+          } else {
+            // Use the provided path or default
+            targetPath = outputPath || currentSettings.screenshotPath || getDefaultDownloadsFolder();
+            targetPath = convertPathForCurrentPlatform(targetPath);
+          }
+          
+          console.log(`Browser Connector: Final target path: ${targetPath}`);
 
           // Remove the data:image/png;base64, prefix
           const base64Data = data.replace(/^data:image\/png;base64,/, "");
 
           // Create the full directory path if it doesn't exist
-          fs.mkdirSync(targetPath, { recursive: true });
-          console.log(`Created/verified directory: ${targetPath}`);
+          try {
+            fs.mkdirSync(targetPath, { recursive: true });
+            console.log(`Browser Connector: Created directory: ${targetPath}`);
+          } catch (err) {
+            console.error(`Browser Connector: Error creating directory: ${targetPath}`, err);
+            throw new Error(`Failed to create screenshot directory: ${err instanceof Error ? err.message : String(err)}`);
+          }
 
           // Generate a unique filename using timestamp
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const filename = `screenshot-${timestamp}.png`;
           const fullPath = path.join(targetPath, filename);
-          console.log(`Saving screenshot to: ${fullPath}`);
+          console.log(`Browser Connector: Full screenshot path: ${fullPath}`);
 
           // Write the file
-          fs.writeFileSync(fullPath, base64Data, "base64");
-          console.log("Screenshot saved successfully");
+          try {
+            fs.writeFileSync(fullPath, base64Data, "base64");
+            console.log(`Browser Connector: Screenshot saved successfully to: ${fullPath}`);
+          } catch (err) {
+            console.error(`Browser Connector: Error saving screenshot to: ${fullPath}`, err);
+            throw new Error(`Failed to save screenshot: ${err instanceof Error ? err.message : String(err)}`);
+          }
 
           res.json({
             path: fullPath,
@@ -627,33 +931,56 @@ export class BrowserConnector {
       console.log("Browser Connector: Received screenshot data, saving...");
       console.log("Browser Connector: Custom path from extension:", customPath);
 
-      // Determine target path
-      const targetPath =
-        customPath ||
-        currentSettings.screenshotPath ||
-        getDefaultDownloadsFolder();
-      console.log(`Browser Connector: Using path: ${targetPath}`);
+      // Determine target path - prioritize relative path for WSL environments
+      let targetPath;
+      if (os.platform() === 'linux' && process.env.WSL_DISTRO_NAME) {
+        // We're in WSL, use a relative path
+        targetPath = getRelativeScreenshotPath();
+        console.log(`Browser Connector: Using relative path for WSL: ${targetPath}`);
+      } else {
+        // Use the provided path or default
+        targetPath = customPath || currentSettings.screenshotPath || getDefaultDownloadsFolder();
+        targetPath = convertPathForCurrentPlatform(targetPath);
+      }
+      
+      console.log(`Browser Connector: Final target path: ${targetPath}`);
 
       if (!base64Data) {
         throw new Error("No screenshot data received from Chrome extension");
       }
 
-      fs.mkdirSync(targetPath, { recursive: true });
+      try {
+        fs.mkdirSync(targetPath, { recursive: true });
+        console.log(`Browser Connector: Created directory: ${targetPath}`);
+      } catch (err) {
+        console.error(`Browser Connector: Error creating directory: ${targetPath}`, err);
+        throw new Error(`Failed to create screenshot directory: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const filename = `screenshot-${timestamp}.png`;
       const fullPath = path.join(targetPath, filename);
+      console.log(`Browser Connector: Full screenshot path: ${fullPath}`);
 
       // Remove the data:image/png;base64, prefix if present
       const cleanBase64 = base64Data.replace(/^data:image\/png;base64,/, "");
 
       // Save the file
-      fs.writeFileSync(fullPath, cleanBase64, "base64");
-      console.log(`Browser Connector: Screenshot saved to: ${fullPath}`);
+      try {
+        fs.writeFileSync(fullPath, cleanBase64, "base64");
+        console.log(`Browser Connector: Screenshot saved to: ${fullPath}`);
+      } catch (err) {
+        console.error(`Browser Connector: Error saving screenshot to: ${fullPath}`, err);
+        throw new Error(`Failed to save screenshot: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      
+      // Store the last screenshot path
+      this.lastScreenshotPath = fullPath;
 
       res.json({
-        path: fullPath,
+        imagePath: fullPath,
         filename: filename,
+        imageData: `data:image/png;base64,${cleanBase64}`
       });
     } catch (error) {
       const errorMessage =
@@ -669,9 +996,95 @@ export class BrowserConnector {
   }
 }
 
+// Add a discovery endpoint that returns server address information
+app.get("/server-info", (req, res) => {
+  // Get all network interfaces to help clients discover the server
+  const networkInterfaces = os.networkInterfaces();
+  const addresses: string[] = [];
+  
+  // Collect all non-internal IPv4 addresses
+  Object.keys(networkInterfaces).forEach((interfaceName) => {
+    const interfaces = networkInterfaces[interfaceName];
+    if (interfaces) {
+      interfaces.forEach((iface) => {
+        // Skip internal and non-IPv4 addresses
+        if (!iface.internal && iface.family === 'IPv4') {
+          addresses.push(iface.address);
+        }
+      });
+    }
+  });
+  
+  // Determine if we're running in WSL
+  const isWsl = !!process.env.WSL_DISTRO_NAME;
+  
+  // Generate recommended connection URLs based on environment
+  const recommendedUrls: string[] = [];
+  
+  // Always add localhost
+  recommendedUrls.push(`http://localhost:${PORT}`);
+  recommendedUrls.push(`http://127.0.0.1:${PORT}`);
+  
+  // Add WSL-specific URLs if applicable
+  if (isWsl) {
+    recommendedUrls.push(`http://wsl.localhost:${PORT}`);
+  }
+  
+  // Add all detected IP addresses
+  addresses.forEach(addr => {
+    recommendedUrls.push(`http://${addr}:${PORT}`);
+  });
+  
+  res.json({
+    status: "ok",
+    port: PORT,
+    addresses: addresses,
+    hostname: os.hostname(),
+    platform: os.platform(),
+    isWsl: isWsl,
+    recommendedUrls: recommendedUrls,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Move the server creation before BrowserConnector instantiation
-const server = app.listen(PORT, () => {
-  console.log(`Aggregator listening on http://127.0.0.1:${PORT}`);
+const server = app.listen(PORT, currentSettings.serverHost, () => {
+  console.log(`\n=== Browser Tools Server Started ===`);
+  console.log(`Aggregator listening on http://${currentSettings.serverHost}:${PORT}`);
+  
+  // Log all available network interfaces for easier discovery
+  const networkInterfaces = os.networkInterfaces();
+  console.log("\nAvailable on the following network addresses:");
+  
+  Object.keys(networkInterfaces).forEach((interfaceName) => {
+    const interfaces = networkInterfaces[interfaceName];
+    if (interfaces) {
+      interfaces.forEach((iface) => {
+        if (!iface.internal && iface.family === 'IPv4') {
+          console.log(`  - http://${iface.address}:${PORT}`);
+        }
+      });
+    }
+  });
+  
+  console.log(`\nFor local access use: http://localhost:${PORT}`);
+  
+  // Add Chrome extension configuration instructions
+  console.log(`\n=== Chrome Extension Configuration ===`);
+  console.log(`To configure your Chrome extension, use one of these URLs:`);
+  
+  // For Windows host accessing WSL
+  if (os.platform() === 'linux' && process.env.WSL_DISTRO_NAME) {
+    console.log(`  - For Windows host: http://wsl.localhost:${PORT}`);
+    console.log(`  - For WSL: http://localhost:${PORT}`);
+  } else if (os.platform() === 'win32') {
+    console.log(`  - For Windows: http://localhost:${PORT}`);
+  } else {
+    console.log(`  - For ${os.platform()}: http://localhost:${PORT}`);
+  }
+  
+  console.log(`\nTest your connection with: curl http://localhost:${PORT}/ping`);
+  console.log(`=== Server Ready ===\n`);
 });
 
 // Initialize the browser connector with the existing app AND server
