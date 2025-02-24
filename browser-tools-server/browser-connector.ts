@@ -1,5 +1,20 @@
 #!/usr/bin/env node
 
+/**
+ * Browser Connector Server
+ * 
+ * This server connects to a Chrome extension to capture browser logs, network activity,
+ * and screenshots.
+ * 
+ * Environment Variables:
+ * - SERVER_HOST: Host to bind the server to (default: 0.0.0.0)
+ * - PORT: Port to run the server on (default: 3025)
+ * 
+ * Screenshot paths:
+ * - The server will prioritize the path provided by the Chrome extension
+ * - If no path is provided, it will use the user's Downloads/mcp-screenshots folder
+ */
+
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
@@ -144,7 +159,7 @@ interface ScreenshotCallback {
 const screenshotCallbacks = new Map<string, ScreenshotCallback>();
 
 const app = express();
-const PORT = 3025;
+const PORT = parseInt(process.env.PORT || "3025", 10);
 
 app.use(cors());
 // Increase JSON body parser limit to 50MB to handle large screenshots
@@ -747,19 +762,18 @@ export class BrowserConnector {
             return;
           }
 
-          // Determine target path - prioritize relative path for WSL environments
-          let targetPath;
-          if (os.platform() === 'linux' && process.env.WSL_DISTRO_NAME) {
-            // We're in WSL, use a relative path
-            targetPath = getRelativeScreenshotPath();
-            console.log(`Browser Connector: Using relative path for WSL: ${targetPath}`);
-          } else {
-            // Use the provided path or default
-            targetPath = outputPath || currentSettings.screenshotPath || getDefaultDownloadsFolder();
-            targetPath = convertPathForCurrentPlatform(targetPath);
+          // Always prioritize the path from the Chrome extension
+          let targetPath = outputPath;
+          
+          // If no path provided by extension, fall back to defaults
+          if (!targetPath) {
+            targetPath = currentSettings.screenshotPath || getDefaultDownloadsFolder();
           }
           
-          console.log(`Browser Connector: Final target path: ${targetPath}`);
+          // Convert the path for the current platform
+          targetPath = convertPathForCurrentPlatform(targetPath);
+          
+          console.log(`Browser Connector: Using path: ${targetPath}`);
 
           // Remove the data:image/png;base64, prefix
           const base64Data = data.replace(/^data:image\/png;base64,/, "");
@@ -945,11 +959,13 @@ export class BrowserConnector {
       console.log("Browser Connector: Received screenshot data, saving...");
       console.log("Browser Connector: Custom path from extension:", customPath);
 
-      // Determine target path - prioritize custom path but ensure it's properly converted
-      let targetPath;
+      // Always prioritize the path from the Chrome extension
+      let targetPath = customPath;
       
-      // Use the provided path or default
-      targetPath = customPath || currentSettings.screenshotPath || getDefaultDownloadsFolder();
+      // If no path provided by extension, fall back to defaults
+      if (!targetPath) {
+        targetPath = currentSettings.screenshotPath || getDefaultDownloadsFolder();
+      }
       
       // Convert the path for the current platform
       targetPath = convertPathForCurrentPlatform(targetPath);
