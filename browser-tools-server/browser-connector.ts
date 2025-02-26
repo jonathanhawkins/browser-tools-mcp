@@ -257,6 +257,39 @@ app.get("/", (req, res) => {
     <p>Test your connection with: <code>curl http://localhost:${PORT}/ping</code></p>
   </div>
 
+  <h2>Quick Actions</h2>
+  <div style="margin: 20px 0;">
+    <button id="refreshPageBtn" style="background: #3498db; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold;">
+      Refresh Current Page
+    </button>
+    <div id="refreshResult" style="margin-top: 10px; padding: 8px; display: none; background: #f1f1f1; border-radius: 3px;"></div>
+  </div>
+
+  <script>
+    document.getElementById('refreshPageBtn').addEventListener('click', function() {
+      const resultDiv = document.getElementById('refreshResult');
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = 'Sending refresh command...';
+      
+      fetch('/refresh-page', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        resultDiv.innerHTML = 'Response: ' + JSON.stringify(data);
+        setTimeout(() => {
+          resultDiv.style.display = 'none';
+        }, 3000);
+      })
+      .catch(error => {
+        resultDiv.innerHTML = 'Error: ' + error.message;
+      });
+    });
+  </script>
+
   <h2>Available Endpoints</h2>
   <div class="endpoint">
     <a href="/debug">/debug</a>
@@ -285,6 +318,10 @@ app.get("/", (req, res) => {
   <div class="endpoint">
     <a href="/all-xhr">/all-xhr</a>
     <div class="endpoint-desc">Get all browser XHR requests</div>
+  </div>
+  <div class="endpoint">
+    <a href="/refresh-page">/refresh-page</a>
+    <div class="endpoint-desc">Refresh the current browser page (POST method required)</div>
   </div>
 
   <h2>Server Status</h2>
@@ -631,6 +668,7 @@ app.get("/debug", (req, res) => {
       consoleErrors: "/console-errors",
       networkErrors: "/network-errors",
       allXhr: "/all-xhr",
+      refreshPage: "/refresh-page",
     },
     timestamp: new Date().toISOString(),
   });
@@ -673,6 +711,17 @@ export class BrowserConnector {
           !!this.activeConnection
         );
         await this.captureScreenshot(req, res);
+      }
+    );
+
+    // Register the refresh-page endpoint
+    this.app.post(
+      "/refresh-page",
+      async (req: express.Request, res: express.Response) => {
+        console.log(
+          "Browser Connector: Received request to /refresh-page endpoint"
+        );
+        await this.refreshPage(req, res);
       }
     );
 
@@ -1029,6 +1078,64 @@ export class BrowserConnector {
         error: errorMessage,
       });
     }
+  }
+
+  /**
+   * Refreshes the current page in the connected browser
+   * @param req Express request object
+   * @param res Express response object
+   * @returns Promise that resolves when the refresh command is sent
+   */
+  async refreshPage(req: express.Request, res: express.Response) {
+    if (!this.activeConnection) {
+      return res.status(503).json({ error: "Chrome extension not connected" });
+    }
+
+    try {
+      console.log("Browser Connector: Sending refresh page command to Chrome extension");
+      this.activeConnection.send(JSON.stringify({ type: "refresh-page" }));
+      res.json({ status: "ok", message: "Refresh page command sent successfully" });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.error(
+        "Browser Connector: Error sending refresh page command:",
+        errorMessage
+      );
+      res.status(500).json({
+        error: errorMessage,
+      });
+    }
+  }
+
+  /**
+   * Checks if the browser extension is connected
+   * @returns True if connected, false otherwise
+   */
+  isConnected(): boolean {
+    return this.activeConnection !== null;
+  }
+
+  /**
+   * Sends a command to refresh the page in the connected browser
+   * @returns Promise that resolves when the refresh command is sent
+   */
+  sendRefreshCommand(): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      if (!this.activeConnection) {
+        reject(new Error("Chrome extension not connected"));
+        return;
+      }
+
+      try {
+        console.log("Browser Connector: Sending refresh page command to Chrome extension");
+        this.activeConnection.send(JSON.stringify({ type: "refresh-page" }));
+        resolve(true);
+      } catch (error) {
+        console.error("Browser Connector: Error sending refresh page command:", error);
+        reject(error);
+      }
+    });
   }
 }
 

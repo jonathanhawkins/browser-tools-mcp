@@ -215,6 +215,55 @@ server.tool("wipeLogs", "Wipe all browser logs from memory", async () => {
   };
 });
 
+// Add new tool for refreshing the page
+server.tool(
+  "refreshPage",
+  "Refresh the current browser page",
+  async () => {
+    try {
+      const response = await fetch(
+        `http://${HOST}:${PORT}/refresh-page`,
+        {
+          method: "POST",
+        }
+      );
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "Page refreshed successfully",
+            },
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Error refreshing page: ${result.error || "Unknown error"}`,
+            },
+          ],
+        };
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Failed to refresh page: ${errorMessage}`,
+          },
+        ],
+      };
+    }
+  }
+);
+
 // Start receiving messages on stdio
 (async () => {
   try {

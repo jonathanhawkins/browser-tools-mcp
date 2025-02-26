@@ -331,6 +331,46 @@ wipeLogsButton.addEventListener("click", () => {
   }
 });
 
+// Add refresh page functionality
+const refreshPageButton = document.getElementById("refresh-page");
+refreshPageButton.addEventListener("click", () => {
+  refreshPageButton.textContent = "Refreshing...";
+  
+  // First try using the WebSocket connection through the server
+  fetch(`${getServerUrl()}/refresh-page`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  })
+    .then((response) => response.json())
+    .then((result) => {
+      console.log("Refresh page request sent:", result);
+      refreshPageButton.textContent = "Page Refreshed!";
+      setTimeout(() => {
+        refreshPageButton.textContent = "Refresh Page";
+      }, 2000);
+    })
+    .catch((error) => {
+      console.error("Failed to refresh page via server:", error);
+      
+      // If the server request fails, try using the devtools API directly
+      console.log("Attempting to refresh page via devtools API...");
+      chrome.runtime.sendMessage({ type: "REFRESH_PAGE" }, (response) => {
+        if (!response) {
+          refreshPageButton.textContent = "Failed to refresh!";
+          console.error("Page refresh failed: No response received");
+        } else if (!response.success) {
+          refreshPageButton.textContent = "Failed to refresh!";
+          console.error("Page refresh failed:", response.error);
+        } else {
+          refreshPageButton.textContent = "Page Refreshed!";
+        }
+        setTimeout(() => {
+          refreshPageButton.textContent = "Refresh Page";
+        }, 2000);
+      });
+    });
+});
+
 // Try auto-discovery on load
 window.addEventListener("load", async () => {
   if (!settings.serverUrl) {

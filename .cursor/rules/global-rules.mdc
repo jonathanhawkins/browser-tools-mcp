@@ -1,0 +1,12 @@
+---
+description: Global Rules for the Entire Project
+globs: *
+alwaysApply: true
+---
+
+# Global Rules
+
+- We are contributing to a public repository please try to follow their coding practices that's already established
+- Make sure that we're commenting the code in the standard that is established
+- do not make drastic changes
+

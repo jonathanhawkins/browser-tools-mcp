@@ -75,6 +75,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
     });
     return true; // Required to use sendResponse asynchronously
+  } else if (message.type === "REFRESH_PAGE") {
+    // Handle page refresh request
+    console.log("Chrome Extension: Received page refresh request from panel");
+    
+    // Use the chrome.tabs API to reload the current tab
+    chrome.tabs.reload(currentTabId, {}, () => {
+      if (chrome.runtime.lastError) {
+        console.error(
+          "Chrome Extension: Page refresh failed:",
+          chrome.runtime.lastError
+        );
+        sendResponse({
+          success: false,
+          error: chrome.runtime.lastError.message,
+        });
+        return;
+      }
+      
+      console.log("Chrome Extension: Page refreshed successfully");
+      sendResponse({
+        success: true,
+        message: "Page refreshed successfully",
+      });
+    });
+    return true; // Required to use sendResponse asynchronously
   }
 });
 
@@ -575,6 +600,35 @@ function setupWebSocket() {
           });
 
           ws.send(JSON.stringify(response));
+        });
+      } else if (message.type === "refresh-page") {
+        console.log("Chrome Extension: Refreshing page...");
+        
+        // Use the chrome.tabs API to reload the current tab
+        chrome.tabs.reload(currentTabId, {}, () => {
+          if (chrome.runtime.lastError) {
+            console.error(
+              "Chrome Extension: Page refresh failed:",
+              chrome.runtime.lastError
+            );
+            // Send error response if needed
+            ws.send(
+              JSON.stringify({
+                type: "refresh-error",
+                error: chrome.runtime.lastError.message,
+              })
+            );
+            return;
+          }
+          
+          console.log("Chrome Extension: Page refreshed successfully");
+          // Send success response
+          ws.send(
+            JSON.stringify({
+              type: "refresh-success",
+              message: "Page refreshed successfully",
+            })
+          );
         });
       }
     } catch (error) {
